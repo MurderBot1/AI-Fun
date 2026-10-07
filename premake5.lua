@@ -38,9 +38,15 @@ project "app"
     kind "ConsoleApp"
     location "build/app"
     files { "app/src/**.cpp" }
-    links { "glfw_module", "vulkan_backend" }
+    links { "glfw_module", "vulkan_backend", "GLFW" }
     includedirs { "modules/glfw/include", "modules/vulkan/include", "vendor/glfw/include", "vendor/Vulkan-Headers/include" }
     defines { "VK_NO_PROTOTYPES" }
-    filter "configurations:Release"
-        kind "WindowedApp"
+
+    -- System libraries GLFW needs (static libs don't carry them across).
+    filter "system:linux"
+        links { "X11", "pthread", "dl", "m" }
+    filter "system:windows"
+        links { "gdi32", "user32", "shell32" }
+    filter "system:macosx"
+        linkoptions { "-framework Cocoa", "-framework IOKit", "-framework CoreFoundation" }
     filter {}
