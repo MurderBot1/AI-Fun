@@ -18,6 +18,9 @@ workspace "AIFun"
     -- Vulkan structs are routinely partially initialised; MSVC takes numeric warning ids instead.
     filter "action:gmake*"
         disablewarnings { "missing-field-initializers" }
+    -- windows.h (pulled in by miniaudio) defines min/max macros that break std::min/std::max.
+    filter "system:windows"
+        defines { "NOMINMAX", "_CRT_SECURE_NO_WARNINGS" }
     filter "configurations:Debug"
         defines { "DEBUG" }
         symbols "On"

@@ -1,3 +1,6 @@
+#ifndef NOMINMAX
+#define NOMINMAX // keep windows.h from defining min/max macros
+#endif
 #define MINIAUDIO_IMPLEMENTATION
 #include <miniaudio.h>
 
