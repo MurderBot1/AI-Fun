@@ -1,5 +1,7 @@
 #include "audio/engine.h"
 #include "glfw/window.h"
+#include "options.h"
+#include "raytracer/orbit_camera.h"
 #include "raytracer/renderer.h"
 #include "ui/layer.h"
 #include "vulkan_backend/backend.h"
@@ -20,32 +22,15 @@ namespace {
 constexpr int kRenderWidth = 960;
 constexpr int kRenderHeight = 540;
 
-// Orbit camera driven by the mouse; converts to the path tracer's Camera.
-struct OrbitCamera {
-    float yaw = 0.0f;
-    float pitch = 0.18f;
-    float distance = 7.0f;
-    rt::Vec3 target{0, 1, 0};
-    float fov = 40.0f;
-    float aperture = 0.0f;
-    float focus = 7.0f;
-
-    rt::Camera toCamera() const {
-        rt::Camera c;
-        c.position = target + rt::Vec3{std::sin(yaw) * std::cos(pitch) * distance,
-                                       std::sin(pitch) * distance,
-                                       std::cos(yaw) * std::cos(pitch) * distance};
-        c.target = target;
-        c.verticalFovDegrees = fov;
-        c.aperture = aperture;
-        c.focusDistance = focus;
-        return c;
-    }
-};
-
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    const Options options = parseOptions(argc, argv);
+    if (!options.valid) {
+        std::fprintf(stderr, "%s\nusage: app [--demo] [--seconds N]\n", options.error.c_str());
+        return 2;
+    }
+
     try {
         glfwmod::Window window(1280, 720, "AI-Fun Ray Tracer");
 
@@ -60,6 +45,7 @@ int main() {
         int fbw = 0, fbh = 0;
         window.framebufferSize(fbw, fbh);
         backend.attachSurface(surface, static_cast<uint32_t>(fbw), static_cast<uint32_t>(fbh));
+        std::printf("Vulkan device: %s\n", backend.deviceName().c_str());
 
         ui::Layer ui(window, backend);
         vkbackend::Texture texture(backend, kRenderWidth, kRenderHeight);
@@ -69,7 +55,7 @@ int main() {
 
         rt::Renderer renderer(kRenderWidth, kRenderHeight);
         renderer.setScene(rt::makeDemoScene());
-        OrbitCamera orbit;
+        rt::OrbitCamera orbit;
         renderer.setCamera(orbit.toCamera());
         renderer.start();
 
@@ -82,7 +68,18 @@ int main() {
         float toneHz = 440.0f;
         audio.setMasterVolume(volume);
 
+        const auto startTime = std::chrono::steady_clock::now();
+        auto lastTime = startTime;
+        double demoCameraTimer = 0.0;
+
         while (!window.shouldClose()) {
+            const auto now = std::chrono::steady_clock::now();
+            const double elapsed = std::chrono::duration<double>(now - startTime).count();
+            const float dt = std::chrono::duration<float>(now - lastTime).count();
+            lastTime = now;
+            if (options.seconds > 0.0 && elapsed >= options.seconds)
+                window.requestClose();
+
             window.pollEvents();
             window.framebufferSize(fbw, fbh);
             backend.resize(static_cast<uint32_t>(fbw), static_cast<uint32_t>(fbh));
@@ -101,13 +98,22 @@ int main() {
             bool cameraChanged = false;
             if (!io.WantCaptureMouse) {
                 if (ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
-                    orbit.yaw -= io.MouseDelta.x * 0.005f;
-                    orbit.pitch = std::clamp(orbit.pitch + io.MouseDelta.y * 0.005f, -1.4f, 1.4f);
+                    orbit.rotate(-io.MouseDelta.x * 0.005f, io.MouseDelta.y * 0.005f);
                     cameraChanged |= io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f;
                 }
                 if (io.MouseWheel != 0.0f) {
-                    orbit.distance =
-                        std::clamp(orbit.distance * (1.0f - io.MouseWheel * 0.1f), 1.5f, 40.0f);
+                    orbit.zoom(1.0f - io.MouseWheel * 0.1f);
+                    cameraChanged = true;
+                }
+            }
+
+            // Demo mode: slowly orbit. The renderer restarts accumulation on every camera push, so
+            // push at a low rate to let a few samples build up between moves.
+            if (options.demo) {
+                orbit.rotate(dt * 0.3f, 0.0f);
+                demoCameraTimer += dt;
+                if (demoCameraTimer >= 0.5) {
+                    demoCameraTimer = 0.0;
                     cameraChanged = true;
                 }
             }

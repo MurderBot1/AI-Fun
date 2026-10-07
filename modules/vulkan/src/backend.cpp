@@ -128,6 +128,10 @@ void Backend::createDevice() {
     if (!m_physicalDevice)
         throw std::runtime_error("No GPU with graphics + present support for this window");
 
+    VkPhysicalDeviceProperties chosenProps;
+    vkGetPhysicalDeviceProperties(m_physicalDevice, &chosenProps);
+    m_deviceName = chosenProps.deviceName;
+
     uint32_t extCount = 0;
     vkEnumerateDeviceExtensionProperties(m_physicalDevice, nullptr, &extCount, nullptr);
     std::vector<VkExtensionProperties> exts(extCount);

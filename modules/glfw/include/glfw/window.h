@@ -17,6 +17,7 @@ class Window {
     Window& operator=(const Window&) = delete;
 
     bool shouldClose() const;
+    void requestClose() const;
     void pollEvents() const;
 
     GLFWwindow* handle() const { return m_window; }

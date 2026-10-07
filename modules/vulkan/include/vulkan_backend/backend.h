@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace vkbackend {
@@ -47,6 +48,7 @@ class Backend {
     uint32_t minImageCount() const { return m_minImageCount; }
     VkExtent2D extent() const { return m_extent; }
     uint32_t apiVersion() const { return kApiVersion; }
+    const std::string& deviceName() const { return m_deviceName; }
 
     uint32_t findMemoryType(uint32_t typeBits, VkMemoryPropertyFlags props) const;
 
@@ -66,6 +68,7 @@ class Backend {
     VkQueue m_queue = VK_NULL_HANDLE;
     uint32_t m_queueFamily = 0;
     bool m_portabilityEnumeration = false;
+    std::string m_deviceName;
 
     VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
     VkSurfaceFormatKHR m_format{};

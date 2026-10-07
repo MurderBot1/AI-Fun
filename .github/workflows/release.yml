@@ -1,6 +1,7 @@
 name: Release
 
-# Pushing to dev (or any dev/* branch) builds all platforms and publishes a new release.
+# Pushing to dev (or any dev/* branch) builds all platforms, publishes a new release, then runs the
+# Linux build under a virtual display (software Vulkan), records it, and attaches the video.
 on:
   push:
     branches:
@@ -9,6 +10,9 @@ on:
 
 permissions:
   contents: write
+
+env:
+  TAG: v0.1.${{ github.run_number }}
 
 jobs:
   build:
@@ -24,9 +28,90 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.1.${{ github.run_number }}
-          name: Release v0.1.${{ github.run_number }}
+          tag_name: ${{ env.TAG }}
+          name: Release ${{ env.TAG }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
           prerelease: true
           files: dist/*
+
+  demo-video:
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the Linux build that was just released
+        run: |
+          mkdir -p dist
+          gh release download "$TAG" --pattern 'AI-Fun-Linux.tar.gz' --dir dist
+          tar xzf dist/AI-Fun-Linux.tar.gz -C dist
+          chmod +x dist/app
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Install virtual display, software Vulkan and ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y x11-utils xvfb ffmpeg mesa-vulkan-drivers vulkan-tools libvulkan1 \
+            libxrandr2 libxinerama1 libxcursor1 libxi6 libxext6 libasound2t64 || \
+          sudo apt-get install -y x11-utils xvfb ffmpeg mesa-vulkan-drivers vulkan-tools libvulkan1 \
+            libxrandr2 libxinerama1 libxcursor1 libxi6 libxext6 libasound2
+
+      - name: Start virtual display
+        run: |
+          Xvfb :99 -screen 0 1280x720x24 &
+          for i in $(seq 1 50); do xdpyinfo -display :99 >/dev/null 2>&1 && break; sleep 0.2; done
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+
+      - name: Show Vulkan devices
+        run: vulkaninfo --summary
+
+      - name: Run the app and record it
+        run: |
+          mkdir -p out
+          # Record for the whole run; the app exits by itself after --seconds.
+          ffmpeg -y -loglevel warning -f x11grab -video_size 1280x720 -framerate 20 -i :99 \
+            -t 18 -c:v libx264 -preset veryfast -pix_fmt yuv420p out/demo.mp4 &
+          FFMPEG_PID=$!
+          sleep 1
+          status=0
+          timeout 60 ./dist/app --demo --seconds 14 2>&1 | tee out/app.log || status=$?
+          wait "$FFMPEG_PID" || true
+          if [ "$status" -ne 0 ]; then
+            echo "::error::app exited with status $status (see log above)"
+            exit 1
+          fi
+          test -s out/demo.mp4
+
+      - name: Make a GIF preview
+        run: |
+          ffmpeg -y -loglevel warning -i out/demo.mp4 -t 14 \
+            -vf "fps=8,scale=640:-1:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse" \
+            out/demo.gif
+          ls -lh out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: demo-video
+          path: out/*
+
+      - name: Attach video to the release
+        run: |
+          gh release upload "$TAG" out/demo.mp4 out/demo.gif --clobber
+          base="https://github.com/${{ github.repository }}/releases/download/$TAG"
+          gh release view "$TAG" --json body --jq .body > notes.md
+          {
+            cat notes.md
+            echo
+            echo "## Demo"
+            echo "The Linux build running the ray-traced demo scene (recorded in CI with software Vulkan):"
+            echo
+            echo "[![demo]($base/demo.gif)]($base/demo.mp4)"
+            echo
+            echo "[Download the full video (mp4)]($base/demo.mp4)"
+          } > notes-new.md
+          gh release edit "$TAG" --notes-file notes-new.md
+        env:
+          GH_TOKEN: ${{ github.token }}

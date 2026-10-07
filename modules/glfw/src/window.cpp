@@ -27,6 +27,10 @@ bool Window::shouldClose() const {
     return glfwWindowShouldClose(m_window) != 0;
 }
 
+void Window::requestClose() const {
+    glfwSetWindowShouldClose(m_window, GLFW_TRUE);
+}
+
 void Window::pollEvents() const {
     glfwPollEvents();
 }

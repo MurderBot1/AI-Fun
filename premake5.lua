@@ -59,7 +59,7 @@ project "tests"
     links { "vulkan_backend", "volk", "audio", "raytracer" }
     includedirs {
         "modules/raytracer/include", "modules/audio/include", "modules/vulkan/include",
-        "vendor/doctest", "vendor/Vulkan-Headers/include",
+        "app/src", "vendor/doctest", "vendor/Vulkan-Headers/include",
     }
     defines { "VK_NO_PROTOTYPES" }
     filter "system:linux"
