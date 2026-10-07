@@ -19,9 +19,11 @@ TEST_CASE("No arguments gives defaults") {
     CHECK(o.seconds == doctest::Approx(0.0));
     CHECK(o.renderWidth == 960);
     CHECK(o.renderHeight == 540);
-    CHECK(o.demoSamples == 256);
-    CHECK(o.demoFrames == 4);
-    CHECK(o.demoHoldSeconds == doctest::Approx(3.0));
+    CHECK(o.demoSamples == 192);
+    CHECK(o.demoFps == 24);
+    CHECK(o.demoDurationSeconds == doctest::Approx(5.0));
+    CHECK(o.demoSweepDegrees == doctest::Approx(50.0));
+    CHECK_FALSE(o.demoPingPong);
 }
 
 TEST_CASE("--demo and --seconds parse together in any order") {
@@ -36,12 +38,14 @@ TEST_CASE("--demo and --seconds parse together in any order") {
 }
 
 TEST_CASE("Demo tuning options") {
-    Options o = parse({"--demo", "--demo-samples", "512", "--demo-frames", "6", "--demo-hold",
-                       "1.5", "--size", "640x360"});
+    Options o = parse({"--demo", "--demo-samples", "512", "--demo-fps", "30", "--demo-duration",
+                       "4.5", "--demo-sweep", "90", "--demo-pingpong", "--size", "640x360"});
     CHECK(o.valid);
     CHECK(o.demoSamples == 512);
-    CHECK(o.demoFrames == 6);
-    CHECK(o.demoHoldSeconds == doctest::Approx(1.5));
+    CHECK(o.demoFps == 30);
+    CHECK(o.demoDurationSeconds == doctest::Approx(4.5));
+    CHECK(o.demoSweepDegrees == doctest::Approx(90.0));
+    CHECK(o.demoPingPong);
     CHECK(o.renderWidth == 640);
     CHECK(o.renderHeight == 360);
 }
@@ -56,9 +60,13 @@ TEST_CASE("Bad arguments are rejected with a message") {
     CHECK_FALSE(parse({"--seconds", "nan"}).valid);
     CHECK_FALSE(parse({"--demo-samples", "0"}).valid);
     CHECK_FALSE(parse({"--demo-samples", "-5"}).valid);
-    CHECK_FALSE(parse({"--demo-frames", "0"}).valid);
-    CHECK_FALSE(parse({"--demo-frames"}).valid);
-    CHECK_FALSE(parse({"--demo-hold", "-1"}).valid);
+    CHECK_FALSE(parse({"--demo-fps", "0"}).valid);
+    CHECK_FALSE(parse({"--demo-fps"}).valid);
+    CHECK_FALSE(parse({"--demo-fps", "1000"}).valid);
+    CHECK_FALSE(parse({"--demo-duration", "0"}).valid);
+    CHECK_FALSE(parse({"--demo-duration", "-1"}).valid);
+    CHECK_FALSE(parse({"--demo-sweep", "0"}).valid);
+    CHECK_FALSE(parse({"--demo-sweep", "720"}).valid);
     CHECK_FALSE(parse({"--size", "640"}).valid);
     CHECK_FALSE(parse({"--size", "640x"}).valid);
     CHECK_FALSE(parse({"--size", "x360"}).valid);

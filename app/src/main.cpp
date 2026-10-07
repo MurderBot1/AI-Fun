@@ -23,10 +23,11 @@ namespace {} // namespace
 int main(int argc, char** argv) {
     const Options options = parseOptions(argc, argv);
     if (!options.valid) {
-        std::fprintf(stderr,
-                     "%s\nusage: app [--demo] [--demo-samples N] [--demo-frames N] [--demo-hold S] "
-                     "[--size WxH] [--seconds N]\n",
-                     options.error.c_str());
+        std::fprintf(
+            stderr,
+            "%s\nusage: app [--demo] [--demo-samples N] [--demo-fps N] [--demo-duration S] "
+            "[--demo-sweep DEG] [--demo-pingpong] [--size WxH] [--seconds N]\n",
+            options.error.c_str());
         return 2;
     }
 
@@ -60,7 +61,7 @@ int main(int argc, char** argv) {
         renderer.setScene(rt::makeDemoScene());
         rt::OrbitCamera orbit;
         renderer.setCamera(orbit.toCamera());
-        if (options.demo) // stop accumulating once a view has converged
+        if (options.demo) // stop accumulating once a frame has converged
             renderer.setSampleLimit(options.demoSamples);
         renderer.start();
 
@@ -77,10 +78,17 @@ int main(int argc, char** argv) {
         auto lastTime = startTime;
         DemoDirector::Config demoConfig;
         demoConfig.targetSamples = options.demoSamples;
-        demoConfig.minHoldSeconds = options.demoHoldSeconds;
-        demoConfig.totalFrames = options.demoFrames;
+        demoConfig.fps = options.demoFps;
+        demoConfig.frames =
+            static_cast<uint32_t>(std::lround(options.demoFps * options.demoDurationSeconds));
+        demoConfig.totalYaw =
+            static_cast<float>(options.demoSweepDegrees * 3.14159265358979 / 180.0);
+        demoConfig.pingPong = options.demoPingPong;
         DemoDirector director(demoConfig);
-        bool announceFirstFrame = false;
+        std::vector<std::vector<uint8_t>> bakedFrames; // demo: every converged frame, in order
+        const float startYaw = orbit.yaw;
+        int shownFrame = -1;
+        bool announcePlayback = false;
 
         while (!window.shouldClose()) {
             const auto now = std::chrono::steady_clock::now();
@@ -104,9 +112,10 @@ int main(int argc, char** argv) {
             ui.beginFrame();
             ImGuiIO& io = ImGui::GetIO();
 
-            // Mouse orbit (right button) and zoom (wheel) unless ImGui wants the mouse.
+            // Mouse orbit (right button) and zoom (wheel) unless ImGui wants the mouse. The
+            // scripted demo owns the camera.
             bool cameraChanged = false;
-            if (!io.WantCaptureMouse) {
+            if (!options.demo && !io.WantCaptureMouse) {
                 if (ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
                     orbit.rotate(-io.MouseDelta.x * 0.005f, io.MouseDelta.y * 0.005f);
                     cameraChanged |= io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f;
@@ -117,32 +126,48 @@ int main(int argc, char** argv) {
                 }
             }
 
-            // Demo mode: a view is only put on screen once it has converged, then the camera moves
-            // on and the next view renders out of sight while this one stays up.
+            // Demo mode, as if rendered in real time: first bake every frame of a smooth camera
+            // sweep (each fully converged, rendered out of sight), then play them back at a fixed
+            // frame rate.
             if (options.demo) {
-                // Read the generation first: the renderer publishes samples before generation, so
-                // a generation seen here can never be paired with an older sample count.
-                const uint32_t generation = renderer.publishedGeneration();
-                const uint32_t samples = renderer.sampleCount();
-                if (director.update(dt, samples, generation)) {
-                    uploadedSamples = renderer.copyFrame(pixels);
-                    texture.setPixels(pixels.data());
-                    announceFirstFrame |= director.framesShown() == 1;
-                    orbit.rotate(director.yawStep(), 0.0f);
-                    cameraChanged = true;
+                if (director.phase() == DemoDirector::Phase::Baking) {
+                    // Read the generation first: the renderer publishes samples before generation,
+                    // so a generation seen here can never be paired with an older sample count.
+                    const uint32_t generation = renderer.publishedGeneration();
+                    const uint32_t samples = renderer.sampleCount();
+                    if (director.bakeUpdate(samples, generation)) {
+                        bakedFrames.emplace_back();
+                        renderer.copyFrame(bakedFrames.back());
+                        texture.setPixels(bakedFrames.back().data()); // latest baked frame
+                        if (director.phase() == DemoDirector::Phase::Baking) {
+                            orbit.yaw = startYaw + director.yawFor(director.captured());
+                            cameraChanged = true;
+                        }
+                    }
+                } else {
+                    const uint32_t frame = director.playbackFrame(dt);
+                    if (static_cast<int>(frame) != shownFrame) {
+                        texture.setPixels(bakedFrames[frame].data());
+                        if (shownFrame < 0)
+                            announcePlayback = true;
+                        shownFrame = static_cast<int>(frame);
+                    }
+                    if (director.phase() == DemoDirector::Phase::Done)
+                        window.requestClose();
                 }
-                if (director.finished())
-                    window.requestClose();
             }
 
             ImGui::SetNextWindowPos(ImVec2(12, 12), ImGuiCond_FirstUseEver);
             ImGui::Begin("Ray Tracer", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
             if (options.demo) {
-                ImGui::Text("Demo: view %u/%u",
-                            std::min(director.framesShown() + 1, options.demoFrames),
-                            options.demoFrames);
-                ImGui::Text("Rendering next view: %u/%u spp", renderer.sampleCount(),
-                            options.demoSamples);
+                if (director.phase() == DemoDirector::Phase::Baking) {
+                    ImGui::Text("Demo: baking frame %u/%u", director.captured() + 1,
+                                director.frames());
+                    ImGui::Text("Frame progress: %u/%u spp", renderer.sampleCount(),
+                                options.demoSamples);
+                } else {
+                    ImGui::Text("Demo: playback %.0f fps", demoConfig.fps);
+                }
             } else {
                 ImGui::Text("Samples: %u", renderer.sampleCount());
             }
@@ -175,7 +200,7 @@ int main(int argc, char** argv) {
                 renderer.setCamera(orbit.toCamera());
 
             // Interactive mode shows the progressively refining image; demo mode only shows
-            // finished views (uploaded above).
+            // finished frames (uploaded above).
             if (!options.demo && renderer.sampleCount() != uploadedSamples) {
                 uploadedSamples = renderer.copyFrame(pixels);
                 texture.setPixels(pixels.data());
@@ -194,14 +219,18 @@ int main(int argc, char** argv) {
             ui.render(cmd);
             backend.endFrame();
 
-            if (announceFirstFrame) {
+            if (announcePlayback) {
                 // The recording script waits for this line before it starts capturing.
-                std::printf("DEMO_FIRST_FRAME\n");
+                std::printf("DEMO_PLAYBACK_START\n");
                 std::fflush(stdout);
-                announceFirstFrame = false;
+                announcePlayback = false;
             }
-            if (options.demo) // keep software-rendered UIs from starving the path tracer of CPU
-                std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            if (options.demo) {
+                // While baking, keep a software-rendered UI from starving the path tracer of CPU;
+                // during playback the renderer is idle and the loop must keep the frame rate.
+                const bool baking = director.phase() == DemoDirector::Phase::Baking;
+                std::this_thread::sleep_for(std::chrono::milliseconds(baking ? 100 : 8));
+            }
         }
 
         renderer.stop();

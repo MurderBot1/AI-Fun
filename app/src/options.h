@@ -4,18 +4,22 @@
 #include <string>
 
 // Command line options for the app.
-//   --demo               scripted run: each camera view is rendered until it has converged and is
-//                        only shown once finished (no progressive refinement on screen)
-//   --demo-samples N     samples per pixel a demo view needs before it is shown (default 256)
-//   --demo-frames N      number of finished views to show, then exit (default 4)
-//   --demo-hold S        minimum seconds each finished view stays on screen (default 3)
+//   --demo               scripted run: pre-render a smooth camera sweep (every frame fully
+//                        converged, nothing shown while baking), then play it back in real time
+//   --demo-samples N     samples per pixel per frame (default 192)
+//   --demo-fps N         playback frame rate (default 24)
+//   --demo-duration S    seconds of camera sweep; frames = fps * S (default 5)
+//   --demo-sweep DEG     degrees swept around the centre (default 50)
+//   --demo-pingpong      after the sweep, play it backwards too
 //   --size WxH           internal render resolution (default 960x540)
 //   --seconds N          exit after N seconds (0 / absent = run until the window is closed)
 struct Options {
     bool demo = false;
-    unsigned demoSamples = 256;
-    unsigned demoFrames = 4;
-    double demoHoldSeconds = 3.0;
+    bool demoPingPong = false;
+    unsigned demoSamples = 192;
+    unsigned demoFps = 24;
+    double demoDurationSeconds = 5.0;
+    double demoSweepDegrees = 50.0;
     int renderWidth = 960;
     int renderHeight = 540;
     double seconds = 0.0;
@@ -60,8 +64,13 @@ inline Options parseOptions(int argc, const char* const* argv) {
             o.demo = true;
             continue;
         }
+        if (arg == "--demo-pingpong") {
+            o.demoPingPong = true;
+            continue;
+        }
         const bool takesValue = arg == "--seconds" || arg == "--demo-samples" ||
-                                arg == "--demo-frames" || arg == "--demo-hold" || arg == "--size";
+                                arg == "--demo-fps" || arg == "--demo-duration" ||
+                                arg == "--demo-sweep" || arg == "--size";
         if (!takesValue)
             return fail("unknown argument: " + arg);
         if (i + 1 >= argc)
@@ -71,15 +80,18 @@ inline Options parseOptions(int argc, const char* const* argv) {
         if (arg == "--seconds") {
             if (!parseDouble(value, 0.0, 86400.0, o.seconds))
                 return fail(std::string("invalid value for --seconds: ") + value);
-        } else if (arg == "--demo-hold") {
-            if (!parseDouble(value, 0.0, 600.0, o.demoHoldSeconds))
-                return fail(std::string("invalid value for --demo-hold: ") + value);
+        } else if (arg == "--demo-duration") {
+            if (!parseDouble(value, 0.1, 600.0, o.demoDurationSeconds))
+                return fail(std::string("invalid value for --demo-duration: ") + value);
+        } else if (arg == "--demo-sweep") {
+            if (!parseDouble(value, 1.0, 340.0, o.demoSweepDegrees))
+                return fail(std::string("invalid value for --demo-sweep: ") + value);
         } else if (arg == "--demo-samples") {
             if (!parseUnsigned(value, 1, 100000, o.demoSamples))
                 return fail(std::string("invalid value for --demo-samples: ") + value);
-        } else if (arg == "--demo-frames") {
-            if (!parseUnsigned(value, 1, 1000, o.demoFrames))
-                return fail(std::string("invalid value for --demo-frames: ") + value);
+        } else if (arg == "--demo-fps") {
+            if (!parseUnsigned(value, 1, 240, o.demoFps))
+                return fail(std::string("invalid value for --demo-fps: ") + value);
         } else { // --size WxH
             const std::string text = value;
             const size_t x = text.find('x');

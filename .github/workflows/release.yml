@@ -38,7 +38,7 @@ jobs:
   demo-video:
     needs: release
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
 
@@ -71,30 +71,32 @@ jobs:
       - name: Run the app and record it
         run: |
           mkdir -p out
-          # The app only puts a view on screen once it has fully converged (no progressive noise),
-          # then renders the next view out of sight. Start recording at the first finished view.
-          ./dist/app --demo --size 640x360 --demo-samples 256 --demo-frames 4 --demo-hold 3 \
-            > out/app.log 2>&1 &
+          # The renderer is far too slow for a live orbit, so the app first bakes every frame of a
+          # smooth camera sweep (each fully converged, nothing worth recording yet) and then plays
+          # them back in real time at 24 fps. Recording starts when playback starts.
+          ./dist/app --demo --size 640x360 --demo-samples 192 --demo-fps 24 --demo-duration 5 \
+            --demo-sweep 50 --demo-pingpong > out/app.log 2>&1 &
           APP_PID=$!
 
-          for i in $(seq 1 1200); do
-            grep -q DEMO_FIRST_FRAME out/app.log && break
+          for i in $(seq 1 7200); do
+            grep -q DEMO_PLAYBACK_START out/app.log && break
             kill -0 "$APP_PID" 2>/dev/null || break
             sleep 0.5
           done
-          if ! grep -q DEMO_FIRST_FRAME out/app.log; then
+          if ! grep -q DEMO_PLAYBACK_START out/app.log; then
             cat out/app.log
-            echo "::error::the app never produced a first finished frame"
+            echo "::error::the app never started playback"
             exit 1
           fi
 
-          ffmpeg -y -loglevel warning -f x11grab -video_size 1280x720 -framerate 15 -i :99 \
-            -t 900 -c:v libx264 -preset ultrafast -crf 20 -pix_fmt yuv420p out/demo.mp4 &
+          # Capture at twice the playback rate so every frame is sampled evenly.
+          ffmpeg -y -loglevel warning -f x11grab -video_size 1280x720 -framerate 48 -i :99 \
+            -t 120 -c:v libx264 -preset ultrafast -crf 20 -pix_fmt yuv420p out/demo.mp4 &
           FFMPEG_PID=$!
 
           status=0
           wait "$APP_PID" || status=$?
-          sleep 1
+          sleep 0.5
           kill -INT "$FFMPEG_PID" 2>/dev/null || true
           wait "$FFMPEG_PID" || true
 
@@ -108,7 +110,7 @@ jobs:
       - name: Make a GIF preview
         run: |
           ffmpeg -y -loglevel warning -i out/demo.mp4 \
-            -vf "fps=5,scale=480:-1:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse" \
+            -vf "fps=12,scale=480:-1:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse" \
             out/demo.gif
           ls -lh out
 
@@ -126,7 +128,7 @@ jobs:
             cat notes.md
             echo
             echo "## Demo"
-            echo "The Linux build running the ray-traced demo scene (recorded in CI with software Vulkan). Each view is only shown once it has fully converged:"
+            echo "The Linux build running the ray-traced demo scene (recorded in CI with software Vulkan). Every frame is fully converged and the orbit is played back in real time:"
             echo
             echo "[![demo]($base/demo.gif)]($base/demo.mp4)"
             echo
