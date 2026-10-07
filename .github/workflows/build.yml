@@ -35,11 +35,13 @@ jobs:
       - name: Install Premake
         shell: bash
         run: |
-          mkdir -p "$HOME/premake"
+          dir="$RUNNER_TEMP/premake"
+          mkdir -p "$dir"
           url="https://github.com/premake/premake-core/releases/download/v5.0.0-beta4/premake-5.0.0-beta4-${{ matrix.premake_asset }}"
           curl -sSL -o premake_pkg "$url"
-          if [[ "${{ matrix.premake_asset }}" == *.zip ]]; then unzip -q premake_pkg -d "$HOME/premake"; else tar xzf premake_pkg -C "$HOME/premake"; fi
-          echo "$HOME/premake" >> "$GITHUB_PATH"
+          if [[ "${{ matrix.premake_asset }}" == *.zip ]]; then unzip -q premake_pkg -d "$dir"; else tar xzf premake_pkg -C "$dir"; fi
+          chmod +x "$dir"/premake5*
+          if [ "$RUNNER_OS" = "Windows" ]; then cygpath -w "$dir" >> "$GITHUB_PATH"; else echo "$dir" >> "$GITHUB_PATH"; fi
 
       - name: Generate project files
         run: premake5 ${{ matrix.action }}
