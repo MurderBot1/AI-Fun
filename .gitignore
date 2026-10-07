@@ -1,0 +1,7 @@
+build/
+bin/
+bin-int/
+*.user
+.vs/
+.vscode/
+.idea/

@@ -1,0 +1,67 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_call:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            premake_asset: linux.tar.gz
+            action: gmake2
+          - os: macos-latest
+            premake_asset: macosx.tar.gz
+            action: gmake2
+          - os: windows-latest
+            premake_asset: windows.zip
+            action: vs2022
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev
+
+      - name: Install Premake
+        shell: bash
+        run: |
+          mkdir -p "$HOME/premake"
+          url="https://github.com/premake/premake-core/releases/download/v5.0.0-beta4/premake-5.0.0-beta4-${{ matrix.premake_asset }}"
+          curl -sSL -o premake_pkg "$url"
+          if [[ "${{ matrix.premake_asset }}" == *.zip ]]; then unzip -q premake_pkg -d "$HOME/premake"; else tar xzf premake_pkg -C "$HOME/premake"; fi
+          echo "$HOME/premake" >> "$GITHUB_PATH"
+
+      - name: Generate project files
+        run: premake5 ${{ matrix.action }}
+
+      - name: Build (make)
+        if: runner.os != 'Windows'
+        run: make -C build -j4 config=release
+
+      - name: Build (MSBuild)
+        if: runner.os == 'Windows'
+        run: |
+          $msbuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -find MSBuild\**\Bin\MSBuild.exe
+          & $msbuild build\AIFun.sln /p:Configuration=Release /m
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist
+          cd bin/Release-*
+          if [ "$RUNNER_OS" = "Windows" ]; then 7z a "../../dist/AI-Fun-${{ runner.os }}.zip" app.exe; else tar czf "../../dist/AI-Fun-${{ runner.os }}.tar.gz" app; fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AI-Fun-${{ runner.os }}
+          path: dist/*
