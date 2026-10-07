@@ -73,11 +73,11 @@ jobs:
           mkdir -p out
           # Record for the whole run; the app exits by itself after --seconds.
           ffmpeg -y -loglevel warning -f x11grab -video_size 1280x720 -framerate 20 -i :99 \
-            -t 18 -c:v libx264 -preset veryfast -pix_fmt yuv420p out/demo.mp4 &
+            -t 30 -c:v libx264 -preset veryfast -pix_fmt yuv420p out/demo.mp4 &
           FFMPEG_PID=$!
           sleep 1
           status=0
-          timeout 60 ./dist/app --demo --seconds 14 2>&1 | tee out/app.log || status=$?
+          timeout 60 ./dist/app --demo --seconds 26 2>&1 | tee out/app.log || status=$?
           wait "$FFMPEG_PID" || true
           if [ "$status" -ne 0 ]; then
             echo "::error::app exited with status $status (see log above)"
@@ -87,8 +87,8 @@ jobs:
 
       - name: Make a GIF preview
         run: |
-          ffmpeg -y -loglevel warning -i out/demo.mp4 -t 14 \
-            -vf "fps=8,scale=640:-1:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse" \
+          ffmpeg -y -loglevel warning -i out/demo.mp4 -t 26 \
+            -vf "fps=6,scale=480:-1:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse" \
             out/demo.gif
           ls -lh out
 

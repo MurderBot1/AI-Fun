@@ -1,4 +1,5 @@
 #include "audio/engine.h"
+#include "demo_director.h"
 #include "glfw/window.h"
 #include "options.h"
 #include "raytracer/orbit_camera.h"
@@ -70,7 +71,7 @@ int main(int argc, char** argv) {
 
         const auto startTime = std::chrono::steady_clock::now();
         auto lastTime = startTime;
-        double demoCameraTimer = 0.0;
+        DemoDirector director;
 
         while (!window.shouldClose()) {
             const auto now = std::chrono::steady_clock::now();
@@ -107,15 +108,11 @@ int main(int argc, char** argv) {
                 }
             }
 
-            // Demo mode: slowly orbit. The renderer restarts accumulation on every camera push, so
-            // push at a low rate to let a few samples build up between moves.
-            if (options.demo) {
-                orbit.rotate(dt * 0.3f, 0.0f);
-                demoCameraTimer += dt;
-                if (demoCameraTimer >= 0.5) {
-                    demoCameraTimer = 0.0;
-                    cameraChanged = true;
-                }
+            // Demo mode: let the renderer finish a frame at each camera position before moving.
+            if (options.demo &&
+                director.update(dt, renderer.sampleCount(), renderer.publishedGeneration())) {
+                orbit.rotate(director.yawStep(), 0.0f);
+                cameraChanged = true;
             }
 
             ImGui::SetNextWindowPos(ImVec2(12, 12), ImGuiCond_FirstUseEver);

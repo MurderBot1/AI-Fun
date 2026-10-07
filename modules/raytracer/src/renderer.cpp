@@ -191,6 +191,7 @@ bool Renderer::step() {
             m_dirty = false;
             std::fill(m_accum.begin(), m_accum.end(), Vec3{});
             m_samples = 0;
+            ++m_generation;
         }
     }
     if (!m_active.scene)
@@ -226,6 +227,7 @@ void Renderer::publish() {
         m_frame[i * 4 + 3] = 255;
     }
     m_publishedSamples = m_samples;
+    m_publishedGeneration = m_generation;
 }
 
 uint32_t Renderer::copyFrame(std::vector<uint8_t>& rgba) const {

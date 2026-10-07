@@ -44,6 +44,9 @@ class Renderer {
     // Copies the current tonemapped RGBA8 image (width*height*4 bytes). Returns sample count.
     uint32_t copyFrame(std::vector<uint8_t>& rgba) const;
     uint32_t sampleCount() const { return m_publishedSamples.load(); }
+    // Increments each time accumulation restarts (camera/scene/depth change) and a frame from the
+    // new state has been published. Lets callers tell a fresh frame from a stale sample count.
+    uint32_t publishedGeneration() const { return m_publishedGeneration.load(); }
 
   private:
     struct Params {
@@ -69,8 +72,10 @@ class Renderer {
     Params m_active;
     std::vector<Vec3> m_accum;
     uint32_t m_samples = 0;
+    uint32_t m_generation = 0;
 
     std::atomic<uint32_t> m_publishedSamples{0};
+    std::atomic<uint32_t> m_publishedGeneration{0};
     std::atomic<bool> m_running{false};
     std::thread m_thread;
 };

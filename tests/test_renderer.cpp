@@ -133,3 +133,22 @@ TEST_CASE("Background thread renders and stops cleanly") {
     CHECK(r.sampleCount() >= 3);
     r.stop(); // idempotent
 }
+
+TEST_CASE("Published generation advances only when accumulation restarts") {
+    Renderer r(8, 8, 1);
+    r.setScene(tinyScene());
+    r.setCamera(tinyCamera());
+    CHECK(r.publishedGeneration() == 0);
+    r.step();
+    const uint32_t g1 = r.publishedGeneration();
+    CHECK(g1 >= 1);
+    r.step();
+    CHECK(r.publishedGeneration() == g1); // just more samples
+    Camera moved = tinyCamera();
+    moved.position = {1, 0, 6};
+    r.setCamera(moved);
+    CHECK(r.publishedGeneration() == g1); // not republished until the next step
+    r.step();
+    CHECK(r.publishedGeneration() == g1 + 1);
+    CHECK(r.sampleCount() == 1);
+}
