@@ -4,3 +4,15 @@
 [submodule "vendor/Vulkan-Headers"]
 	path = vendor/Vulkan-Headers
 	url = https://github.com/KhronosGroup/Vulkan-Headers.git
+[submodule "vendor/imgui"]
+	path = vendor/imgui
+	url = https://github.com/ocornut/imgui.git
+[submodule "vendor/volk"]
+	path = vendor/volk
+	url = https://github.com/zeux/volk.git
+[submodule "vendor/miniaudio"]
+	path = vendor/miniaudio
+	url = https://github.com/mackron/miniaudio.git
+[submodule "vendor/doctest"]
+	path = vendor/doctest
+	url = https://github.com/doctest/doctest.git

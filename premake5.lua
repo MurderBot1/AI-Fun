@@ -12,6 +12,7 @@ workspace "AIFun"
     targetdir "bin/%{cfg.buildcfg}-%{cfg.system}"
     objdir "bin-int/%{cfg.buildcfg}-%{cfg.system}/%{prj.name}"
     warnings "Extra"
+    disablewarnings { "missing-field-initializers" }
 
     filter "system:macosx"
         architecture "universal"
@@ -25,6 +26,8 @@ workspace "AIFun"
 
 -- Third-party code (git submodules in vendor/).
 include "vendor/glfw.lua"
+include "vendor/volk.lua"
+include "vendor/imgui.lua"
 
 -- Every folder in modules/ with a premake5.lua is a module (include/ = .h, src/ = .cpp).
 for _, dir in ipairs(os.matchdirs("modules/*")) do
@@ -33,20 +36,55 @@ for _, dir in ipairs(os.matchdirs("modules/*")) do
     end
 end
 
+-- Headless tools and tests (no GPU / window needed).
+project "rtcli"
+    kind "ConsoleApp"
+    location "build/tools"
+    files { "tools/rtcli/**.cpp" }
+    links { "raytracer" }
+    includedirs { "modules/raytracer/include" }
+    filter "system:linux"
+        links { "pthread" }
+    filter {}
+
+project "tests"
+    kind "ConsoleApp"
+    location "build/tests"
+    files { "tests/**.cpp" }
+    links { "vulkan_backend", "volk", "audio", "raytracer" }
+    includedirs {
+        "modules/raytracer/include", "modules/audio/include", "modules/vulkan/include",
+        "vendor/doctest", "vendor/Vulkan-Headers/include",
+    }
+    defines { "VK_NO_PROTOTYPES" }
+    filter "system:linux"
+        links { "pthread", "dl", "m" }
+    filter "system:macosx"
+        linkoptions { "-framework CoreFoundation", "-framework CoreAudio", "-framework AudioToolbox" }
+    filter {}
+
 -- The executable.
 project "app"
     kind "ConsoleApp"
     location "build/app"
     files { "app/src/**.cpp" }
-    links { "glfw_module", "vulkan_backend", "GLFW" }
-    includedirs { "modules/glfw/include", "modules/vulkan/include", "vendor/glfw/include", "vendor/Vulkan-Headers/include" }
-    defines { "VK_NO_PROTOTYPES" }
+    -- Order matters for static libraries: dependents before their dependencies.
+    links { "ui", "glfw_module", "vulkan_backend", "audio", "raytracer", "ImGui", "volk", "GLFW" }
+    includedirs {
+        "modules/glfw/include", "modules/vulkan/include", "modules/ui/include",
+        "modules/audio/include", "modules/raytracer/include",
+        "vendor/glfw/include", "vendor/Vulkan-Headers/include", "vendor/imgui",
+    }
+    defines { "GLFW_INCLUDE_NONE", "VK_NO_PROTOTYPES" }
 
-    -- System libraries GLFW needs (static libs don't carry them across).
+    -- System libraries needed by GLFW/miniaudio (static libs don't carry them across).
     filter "system:linux"
         links { "X11", "pthread", "dl", "m" }
     filter "system:windows"
         links { "gdi32", "user32", "shell32" }
     filter "system:macosx"
-        linkoptions { "-framework Cocoa", "-framework IOKit", "-framework CoreFoundation" }
+        linkoptions {
+            "-framework Cocoa", "-framework IOKit", "-framework CoreFoundation",
+            "-framework CoreAudio", "-framework AudioToolbox",
+        }
     filter {}

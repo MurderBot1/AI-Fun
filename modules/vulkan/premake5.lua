@@ -2,7 +2,7 @@ project "vulkan_backend"
     kind "StaticLib"
     location "../../build/modules/vulkan"
     files { "include/**.h", "src/**.cpp" }
-    -- Only the Vulkan headers are needed: the loader is resolved at runtime
-    -- through the function pointer handed over by the window module.
-    includedirs { "include", "../../vendor/Vulkan-Headers/include" }
+    -- Entry points are loaded at runtime with volk through the vkGetInstanceProcAddr pointer
+    -- handed over by the window module, so no Vulkan loader library is linked.
+    includedirs { "include", "../../vendor/Vulkan-Headers/include", "../../vendor/volk" }
     defines { "VK_NO_PROTOTYPES" }

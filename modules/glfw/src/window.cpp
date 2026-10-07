@@ -45,4 +45,13 @@ void* Window::vulkanInstanceProcAddr() const {
     return reinterpret_cast<void*>(glfwGetInstanceProcAddress(nullptr, "vkGetInstanceProcAddr"));
 }
 
+bool Window::createVulkanSurface(void* instance, void* surfaceOut) const {
+    return glfwCreateWindowSurface(static_cast<VkInstance>(instance), m_window, nullptr,
+                                   static_cast<VkSurfaceKHR*>(surfaceOut)) == VK_SUCCESS;
+}
+
+void Window::framebufferSize(int& width, int& height) const {
+    glfwGetFramebufferSize(m_window, &width, &height);
+}
+
 } // namespace glfwmod

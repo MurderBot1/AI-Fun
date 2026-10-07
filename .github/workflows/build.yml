@@ -56,6 +56,14 @@ jobs:
           $msbuild = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -find MSBuild\**\Bin\MSBuild.exe
           & $msbuild build\AIFun.sln /p:Configuration=Release /m
 
+      - name: Test
+        shell: bash
+        run: |
+          out=$(ls -d bin/Release-*)
+          "$out/tests"
+          "$out/rtcli" 64 36 2 smoke.ppm
+          test -s smoke.ppm
+
       - name: Package
         shell: bash
         run: |
