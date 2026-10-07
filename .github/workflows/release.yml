@@ -94,11 +94,18 @@ jobs:
             -t 120 -c:v libx264 -preset ultrafast -crf 20 -pix_fmt yuv420p out/demo.mp4 &
           FFMPEG_PID=$!
 
-          status=0
-          wait "$APP_PID" || status=$?
-          sleep 0.5
+          # Stop recording as soon as playback ends, while the last frame is still on screen
+          # (the app lingers for a second before closing its window).
+          for i in $(seq 1 3600); do
+            grep -q DEMO_PLAYBACK_END out/app.log && break
+            kill -0 "$APP_PID" 2>/dev/null || break
+            sleep 0.1
+          done
           kill -INT "$FFMPEG_PID" 2>/dev/null || true
           wait "$FFMPEG_PID" || true
+
+          status=0
+          wait "$APP_PID" || status=$?
 
           cat out/app.log
           if [ "$status" -ne 0 ]; then

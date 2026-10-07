@@ -89,6 +89,8 @@ int main(int argc, char** argv) {
         const float startYaw = orbit.yaw;
         int shownFrame = -1;
         bool announcePlayback = false;
+        bool announcePlaybackEnd = false;
+        double endGraceSeconds = -1.0; // demo: time left (after playback) before the window closes
 
         while (!window.shouldClose()) {
             const auto now = std::chrono::steady_clock::now();
@@ -152,8 +154,17 @@ int main(int argc, char** argv) {
                             announcePlayback = true;
                         shownFrame = static_cast<int>(frame);
                     }
-                    if (director.phase() == DemoDirector::Phase::Done)
-                        window.requestClose();
+                    if (director.phase() == DemoDirector::Phase::Done) {
+                        // Announce the end, then keep the last frame up briefly so the recorder
+                        // can stop before the window disappears (no black tail in the video).
+                        if (endGraceSeconds < 0.0) {
+                            announcePlaybackEnd = true;
+                            endGraceSeconds = 1.0;
+                        }
+                        endGraceSeconds -= dt;
+                        if (endGraceSeconds <= 0.0)
+                            window.requestClose();
+                    }
                 }
             }
 
@@ -224,6 +235,11 @@ int main(int argc, char** argv) {
                 std::printf("DEMO_PLAYBACK_START\n");
                 std::fflush(stdout);
                 announcePlayback = false;
+            }
+            if (announcePlaybackEnd) {
+                std::printf("DEMO_PLAYBACK_END\n");
+                std::fflush(stdout);
+                announcePlaybackEnd = false;
             }
             if (options.demo) {
                 // While baking, keep a software-rendered UI from starving the path tracer of CPU;
