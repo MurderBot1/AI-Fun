@@ -35,4 +35,4 @@ Linux needs `libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev`.
 - `release.yml` – push to `dev` or `dev/**` publishes a GitHub release with binaries, then runs the Linux build
   under Xvfb with software Vulkan (lavapipe), records it with ffmpeg and attaches `demo.mp4`/`demo.gif` to the release
 
-The app takes `--demo` (auto-orbit the camera) and `--seconds N` (exit after N seconds).
+The app takes `--demo` (scripted camera; each view is shown only once fully converged), `--demo-samples/-frames/-hold`, `--size WxH` and `--seconds N`.

@@ -18,17 +18,15 @@
 #include <thread>
 #include <vector>
 
-namespace {
-
-constexpr int kRenderWidth = 960;
-constexpr int kRenderHeight = 540;
-
-} // namespace
+namespace {} // namespace
 
 int main(int argc, char** argv) {
     const Options options = parseOptions(argc, argv);
     if (!options.valid) {
-        std::fprintf(stderr, "%s\nusage: app [--demo] [--seconds N]\n", options.error.c_str());
+        std::fprintf(stderr,
+                     "%s\nusage: app [--demo] [--demo-samples N] [--demo-frames N] [--demo-hold S] "
+                     "[--size WxH] [--seconds N]\n",
+                     options.error.c_str());
         return 2;
     }
 
@@ -47,17 +45,23 @@ int main(int argc, char** argv) {
         window.framebufferSize(fbw, fbh);
         backend.attachSurface(surface, static_cast<uint32_t>(fbw), static_cast<uint32_t>(fbh));
         std::printf("Vulkan device: %s\n", backend.deviceName().c_str());
+        std::fflush(stdout);
 
         ui::Layer ui(window, backend);
-        vkbackend::Texture texture(backend, kRenderWidth, kRenderHeight);
+        const int renderWidth = options.renderWidth;
+        const int renderHeight = options.renderHeight;
+        vkbackend::Texture texture(backend, static_cast<uint32_t>(renderWidth),
+                                   static_cast<uint32_t>(renderHeight));
         const ImTextureID imageId = ui.addTexture(texture);
 
         audio::Engine audio;
 
-        rt::Renderer renderer(kRenderWidth, kRenderHeight);
+        rt::Renderer renderer(renderWidth, renderHeight);
         renderer.setScene(rt::makeDemoScene());
         rt::OrbitCamera orbit;
         renderer.setCamera(orbit.toCamera());
+        if (options.demo) // stop accumulating once a view has converged
+            renderer.setSampleLimit(options.demoSamples);
         renderer.start();
 
         std::vector<uint8_t> pixels;
@@ -71,7 +75,12 @@ int main(int argc, char** argv) {
 
         const auto startTime = std::chrono::steady_clock::now();
         auto lastTime = startTime;
-        DemoDirector director;
+        DemoDirector::Config demoConfig;
+        demoConfig.targetSamples = options.demoSamples;
+        demoConfig.minHoldSeconds = options.demoHoldSeconds;
+        demoConfig.totalFrames = options.demoFrames;
+        DemoDirector director(demoConfig);
+        bool announceFirstFrame = false;
 
         while (!window.shouldClose()) {
             const auto now = std::chrono::steady_clock::now();
@@ -108,16 +117,35 @@ int main(int argc, char** argv) {
                 }
             }
 
-            // Demo mode: let the renderer finish a frame at each camera position before moving.
-            if (options.demo &&
-                director.update(dt, renderer.sampleCount(), renderer.publishedGeneration())) {
-                orbit.rotate(director.yawStep(), 0.0f);
-                cameraChanged = true;
+            // Demo mode: a view is only put on screen once it has converged, then the camera moves
+            // on and the next view renders out of sight while this one stays up.
+            if (options.demo) {
+                // Read the generation first: the renderer publishes samples before generation, so
+                // a generation seen here can never be paired with an older sample count.
+                const uint32_t generation = renderer.publishedGeneration();
+                const uint32_t samples = renderer.sampleCount();
+                if (director.update(dt, samples, generation)) {
+                    uploadedSamples = renderer.copyFrame(pixels);
+                    texture.setPixels(pixels.data());
+                    announceFirstFrame |= director.framesShown() == 1;
+                    orbit.rotate(director.yawStep(), 0.0f);
+                    cameraChanged = true;
+                }
+                if (director.finished())
+                    window.requestClose();
             }
 
             ImGui::SetNextWindowPos(ImVec2(12, 12), ImGuiCond_FirstUseEver);
             ImGui::Begin("Ray Tracer", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-            ImGui::Text("Samples: %u", renderer.sampleCount());
+            if (options.demo) {
+                ImGui::Text("Demo: view %u/%u",
+                            std::min(director.framesShown() + 1, options.demoFrames),
+                            options.demoFrames);
+                ImGui::Text("Rendering next view: %u/%u spp", renderer.sampleCount(),
+                            options.demoSamples);
+            } else {
+                ImGui::Text("Samples: %u", renderer.sampleCount());
+            }
             ImGui::Text("%.1f FPS (UI)", io.Framerate);
             ImGui::Separator();
             if (ImGui::SliderInt("Max bounces", &maxDepth, 1, 16))
@@ -146,9 +174,9 @@ int main(int argc, char** argv) {
             if (cameraChanged)
                 renderer.setCamera(orbit.toCamera());
 
-            // Upload the newest ray-traced frame when there is one.
-            const uint32_t samples = renderer.sampleCount();
-            if (samples != uploadedSamples) {
+            // Interactive mode shows the progressively refining image; demo mode only shows
+            // finished views (uploaded above).
+            if (!options.demo && renderer.sampleCount() != uploadedSamples) {
                 uploadedSamples = renderer.copyFrame(pixels);
                 texture.setPixels(pixels.data());
             }
@@ -156,8 +184,8 @@ int main(int argc, char** argv) {
 
             // Draw the render letterboxed behind the UI.
             const ImVec2 area = io.DisplaySize;
-            const float scale = std::min(area.x / kRenderWidth, area.y / kRenderHeight);
-            const ImVec2 size(kRenderWidth * scale, kRenderHeight * scale);
+            const float scale = std::min(area.x / renderWidth, area.y / renderHeight);
+            const ImVec2 size(renderWidth * scale, renderHeight * scale);
             const ImVec2 min((area.x - size.x) * 0.5f, (area.y - size.y) * 0.5f);
             ImGui::GetBackgroundDrawList()->AddImage(imageId, min,
                                                      ImVec2(min.x + size.x, min.y + size.y));
@@ -165,6 +193,15 @@ int main(int argc, char** argv) {
             backend.beginRenderPass(cmd);
             ui.render(cmd);
             backend.endFrame();
+
+            if (announceFirstFrame) {
+                // The recording script waits for this line before it starts capturing.
+                std::printf("DEMO_FIRST_FRAME\n");
+                std::fflush(stdout);
+                announceFirstFrame = false;
+            }
+            if (options.demo) // keep software-rendered UIs from starving the path tracer of CPU
+                std::this_thread::sleep_for(std::chrono::milliseconds(30));
         }
 
         renderer.stop();
