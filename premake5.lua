@@ -12,10 +12,12 @@ workspace "AIFun"
     targetdir "bin/%{cfg.buildcfg}-%{cfg.system}"
     objdir "bin-int/%{cfg.buildcfg}-%{cfg.system}/%{prj.name}"
     warnings "Extra"
-    disablewarnings { "missing-field-initializers" }
 
     filter "system:macosx"
         architecture "universal"
+    -- Vulkan structs are routinely partially initialised; MSVC takes numeric warning ids instead.
+    filter "action:gmake*"
+        disablewarnings { "missing-field-initializers" }
     filter "configurations:Debug"
         defines { "DEBUG" }
         symbols "On"
